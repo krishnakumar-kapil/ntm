@@ -87,12 +87,16 @@ class NTMOneShotLearningModel():
             cell = mann_cell.MANNCell(args.rnn_size, args.memory_size, args.memory_vector_dim,
                                     head_num=args.read_head_num)
 
+        # Zero out the memory state
         state = cell.zero_state(args.batch_size, tf.float32)
-        self.state_list = [state]   # For debugging
+        self.state_list = [state]   # For debugging. Keep track of previous states
         self.o = []
         for t in range(args.seq_length):
+            # So this is going and calling __call__
+            # it is passing both the image and x_label
             output, state = cell(tf.concat([self.x_image[:, t, :], self.x_label[:, t, :]], axis=1), state)
             # output, state = cell(self.y[:, t, :], state)
+            # go from the memory stored dimensionality to the number of classes / predictions
             with tf.variable_scope("o2o", reuse=(t > 0)):
                 o2o_w = tf.get_variable('o2o_w', [output.get_shape()[1], args.output_dim],
                                         initializer=tf.random_uniform_initializer(minval=-0.1, maxval=0.1))
@@ -100,6 +104,7 @@ class NTMOneShotLearningModel():
                 o2o_b = tf.get_variable('o2o_b', [args.output_dim],
                                         initializer=tf.random_uniform_initializer(minval=-0.1, maxval=0.1))
                                         # initializer=tf.random_normal_initializer(mean=0.0, stddev=0.1))
+                # matmul + bias
                 output = tf.nn.xw_plus_b(output, o2o_w, o2o_b)
             if args.label_type == 'one_hot':
                 output = tf.nn.softmax(output, dim=1)

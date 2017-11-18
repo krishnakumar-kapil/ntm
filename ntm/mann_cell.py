@@ -2,6 +2,7 @@ import tensorflow as tf
 import numpy as np
 
 class MANNCell():
+    # Q: what is k_strategy
     def __init__(self, rnn_size, memory_size, memory_vector_dim, head_num, gamma=0.95,
                  reuse=False, k_strategy='separate'):
         self.rnn_size = rnn_size
@@ -28,6 +29,7 @@ class MANNCell():
         #                       -> a (dim = memory_vector_dim, add vector, only when k_strategy='separate')
         #                       -> alpha (scalar, combination of w_r and w_lu)
 
+        # The +1 is used for the sigma alpha parameter in the equations
         if self.k_strategy == 'summary':
             num_parameters_per_head = self.memory_vector_dim + 1
         elif self.k_strategy == 'separate':
@@ -68,14 +70,14 @@ class MANNCell():
                 a_list.append(a)
             # p_list.append({'k': k, 'sig_alpha': sig_alpha, 'a': a})   # For debugging
 
+        # TODO: why do add_n
+        # the paper does it at each time period
         w_u = self.gamma * prev_w_u + tf.add_n(w_r_list) + tf.add_n(w_w_list)   # eq (20)
 
-        # Set least used memory location computed from w_(t-1)^u to zero
-
+        # Set least used memory location computed from $w_(t-1)^u$ to zero
         M_ = prev_M * tf.expand_dims(1. - tf.one_hot(prev_indices[:, -1], self.memory_size), dim=2)
 
         # Writing
-
         M = M_
         with tf.variable_scope('writing'):
             for i in range(self.head_num):
@@ -84,7 +86,7 @@ class MANNCell():
                     k = tf.expand_dims(k_list[i], axis=1)
                 elif self.k_strategy == 'separate':
                     k = tf.expand_dims(a_list[i], axis=1)
-                M = M + tf.matmul(w, k)
+                M = M + tf.matmul(w, k)         # eqn 8 from paper
 
         # Reading
 
@@ -95,7 +97,6 @@ class MANNCell():
                 read_vector_list.append(read_vector)
 
         # controller_output -> NTM output
-
         NTM_output = tf.concat([controller_output] + read_vector_list, axis=1)
 
         state = {
@@ -112,18 +113,16 @@ class MANNCell():
 
     def read_head_addressing(self, k, prev_M):
         with tf.variable_scope('read_head_addressing'):
-
             # Cosine Similarity
-
             k = tf.expand_dims(k, axis=2)
             inner_product = tf.matmul(prev_M, k)
             k_norm = tf.sqrt(tf.reduce_sum(tf.square(k), axis=1, keep_dims=True))
             M_norm = tf.sqrt(tf.reduce_sum(tf.square(prev_M), axis=2, keep_dims=True))
             norm_product = M_norm * k_norm
+            # TOOD: remember to always use squeeze when doing divisions
             K = tf.squeeze(inner_product / (norm_product + 1e-8))                   # eq (17)
 
             # Calculating w^c
-
             K_exp = tf.exp(K)
             w = K_exp / tf.reduce_sum(K_exp, axis=1, keep_dims=True)                # eq (18)
 
@@ -131,12 +130,11 @@ class MANNCell():
 
     def write_head_addressing(self, sig_alpha, prev_w_r, prev_w_lu):
         with tf.variable_scope('write_head_addressing'):
-
             # Write to (1) the place that was read in t-1 (2) the place that was least used in t-1
-
             return sig_alpha * prev_w_r + (1. - sig_alpha) * prev_w_lu              # eq (22)
 
     def least_used(self, w_u):
+        # Think w_u is the same size as memory size
         _, indices = tf.nn.top_k(w_u, k=self.memory_size)
         w_lu = tf.reduce_sum(tf.one_hot(indices[:, -self.head_num:], depth=self.memory_size), axis=1)
         return indices, w_lu
