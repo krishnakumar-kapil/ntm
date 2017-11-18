@@ -1,4 +1,4 @@
-from utils import OmniglotDataLoader, one_hot_decode, five_hot_decode
+from utils import OmniglotDataLoader, one_hot_decode, five_hot_decode, eprint
 import tensorflow as tf
 import argparse
 import numpy as np
@@ -32,6 +32,7 @@ def main():
     parser.add_argument('--n_train_classes', default=1200)
     parser.add_argument('--n_test_classes', default=423)
     parser.add_argument('--save_dir', default='./save/one_shot_learning')
+    parser.add_argument('--data_dir', default='.data')
     parser.add_argument('--tensorboard_dir', default='./summary/one_shot_learning')
     args = parser.parse_args()
     if args.mode == 'train':
@@ -41,12 +42,16 @@ def main():
 
 
 def train(args):
+    eprint("Loading in Model")
     model = NTMOneShotLearningModel(args)
+    eprint("Loading Data")
     data_loader = OmniglotDataLoader(
         image_size=(args.image_width, args.image_height),
-        n_train_classses=args.n_train_classes,
-        n_test_classes=args.n_test_classes
+        n_train_classes=args.n_train_classes,
+        n_test_classes=args.n_test_classes,
+        data_dir=args.data_dir
     )
+    eprint("Starting Session")
     with tf.Session() as sess:
         if args.debug:
             sess = tf_debug.LocalCLIDebugWrapperSession(sess)
@@ -58,8 +63,8 @@ def train(args):
             saver = tf.train.Saver(tf.global_variables())
             tf.global_variables_initializer().run()
         train_writer = tf.summary.FileWriter(args.tensorboard_dir + '/' + args.model, sess.graph)
-        print(args)
-        print("1st\t2nd\t3rd\t4th\t5th\t6th\t7th\t8th\t9th\t10th\tbatch\tloss")
+        eprint(args)
+        eprint("1st\t2nd\t3rd\t4th\t5th\t6th\t7th\t8th\t9th\t10th\tbatch\tloss")
         for b in range(args.num_epoches):
 
             # Test
@@ -77,6 +82,7 @@ def train(args):
                 # with open('state_long.txt', 'w') as f:
                 #     print(state_list, file=f)
                 accuracy = test_f(args, y, output)
+                eprint('')
                 for accu in accuracy:
                     print('%.4f' % accu, end='\t')
                 print('%d\t%.4f' % (b, learning_loss))
